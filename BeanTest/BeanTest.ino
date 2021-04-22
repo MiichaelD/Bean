@@ -1,4 +1,3 @@
-
 #include <ArduinoJson.h>
 
 #define PIN_A0  A0
@@ -27,24 +26,33 @@ long m_lastUpdate;
 #define SEND_EOM_CODE Serial.println(EOM_MSG_CODE);
 
 void setup() {
+  pinMode(PIN_A0, OUTPUT);
+  for (int i = 0; i < NUM_DIG_PINS; ++i) {
+    pinMode(PIN_0 + i, OUTPUT);
+  }
+
 //  UUID: A495____-C5B1-4B44-B512-1370F02D74DE
   Bean.enableWakeOnConnect(true);
   Serial.begin(57600);
-  Serial.setTimeout(25);
+  Serial.setTimeout(250);
   randomSeed(0);
   Bean.setLed(0, 0, 0);
   m_counter = 0;
-  //  pinMode(PIN_A0, OUTPUT);
-  //  for (int i = 0; i < NUM_DIG_PINS; ++i) {
-  //    pinMode(PIN_0 + i, OUTPUT);
-  //  }
-
-  Bean.enableWakeOnConnect(true);
   m_lastUpdate = millis();
 }
 
+void loop() {
+  if (Bean.getConnectionState()) {
+    processInputAndLectures();
+    Bean.sleep(1000);
+  } else {
+    m_transmit = false;
+    Bean.setLed(0, 0, 0);
+    Bean.sleep(0xFFFFFFFF);
+  }
+}
 
-void sendLectures() {
+void processInputAndLectures() {
   if (Serial.available()) {
     char data = 'q';
     while (Serial.available()) {
@@ -59,45 +67,46 @@ void sendLectures() {
   if (!m_transmit){
     Serial.print("Not transmitting.");
     SEND_EOM_CODE
-    return;
+//    return;
   }
+  sendLectures();
+}
 
+void sendLectures() {
   StaticJsonBuffer<200> m_jsonBuffer;
   JsonObject &root = m_jsonBuffer.createObject();
-  JsonArray &colors = root.createNestedArray("color");
-  
-  int8_t currTemp = Bean.getTemperature();
-  int8_t battery = Bean.getBatteryLevel();
+  fillBasicData(root);
+  fillColors(root);
+  printJsonMessage(root);
+  updateTimeCoutner();
+}
+
+void fillBasicData(JsonObject& json) {
+  json[TEMP] = Bean.getTemperature();
+  json[SECONDS] = ++m_counter;
+  json[BATTERY] = Bean.getBatteryLevel();
+  json[LAST_TRANSMITION] = millis() - m_lastUpdate;
+}
+
+void fillColors(JsonObject &json) {
   int r = random(256), g = random(256), b = random(256);
-//  Bean.setLed(r, g, b);
-  
+  Bean.setLed(r, g, b);
+  JsonArray &colors = json.createNestedArray("color");
   colors.add(r);
   colors.add(g);
   colors.add(b);
-  root[TEMP] = currTemp;
-  root[SECONDS] = ++m_counter;
-  root[BATTERY] = battery;
-  root[LAST_TRANSMITION] = millis() - m_lastUpdate;
-  m_lastUpdate = millis();
-  root.printTo(Serial);
-//  root.prettyPrintTo(Serial);
+}
+
+void printJsonMessage(JsonObject &json) {
+//  json.printTo(Serial);
+  json.prettyPrintTo(Serial);
   SEND_EOM_CODE
 }
 
-void loop() {
-  //  digitalRead - digitlaWrite
-  //  Serial.read()
-  if (Bean.getConnectionState()) {
-    sendLectures();
-    Bean.sleep(1000);
-  } else {
-    m_transmit = false;
-    Bean.setLed(0, 0, 0);
-    Bean.sleep(0xFFFFFFFF);
-  }
+void updateTimeCoutner() {
+  m_lastUpdate = millis();
 }
-
-
+  
 void updatePinOutput() {
   int pinOn = m_counter % 6;
   for (int i = 0; i < NUM_DIG_PINS; ++i) {
